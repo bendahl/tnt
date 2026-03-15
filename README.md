@@ -29,7 +29,18 @@ The list operation will list only team namespaces in the cluster.
 Its output can be modified in order to get more detailed information or to reformat the output for further processing.
 
 ## Prerequisites
-### Running the Tool
+### Build
+In order to build a binary from this project, you will need the following dependencies installed on your system:
+
+- A recent [Go toolchain](https://go.dev)
+- [GNU Make](https://www.gnu.org/software/make/)
+
+The latter greatly simplifies to properly build a binary and embed version information. 
+Simply run `make` in the root directory of this project to clean, test and build the project.
+
+**IMPORTANT:** At the moment, only Linux builds are supported. Cross compiling will be added at a later point in time.
+
+### Run
 In general, the tool should work across different platforms as long as the binary is compiled for the target platform. 
 Testing is currently only done on Linux (amd64), however. 
 Besides the tool binary on your path, you will also need the following:
@@ -37,9 +48,6 @@ Besides the tool binary on your path, you will also need the following:
 - A **kubectl** version that is compatible with your target cluster on your system's path
 - A properly set up **kubeconfig** file to access your cluster and create resources on the cluster level
 
-### Building the Tool
-An up-to date [Go toolchain](https://go.dev) is required to build the tool.
-Simply perform a `go build` in the main directory of this project to create a standalone binary for your current platform.
 
 ## Design Decisions
 1. **Keep it simple**
