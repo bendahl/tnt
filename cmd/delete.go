@@ -23,6 +23,10 @@ func Delete(args []string) {
 	if err != nil {
 		log.Fatalf("failed to delete namespace: %v", err)
 	}
+	_, err = util.Kubectl(fmt.Sprintf("delete clusterrolebinding -l 'team in (%s)'", team))
+	if err != nil {
+		log.Fatalf("failed to delete clusterrolebinding: %v", err)
+	}
 	_, err = util.Kubectl(fmt.Sprintf("delete serviceaccount -n kube-system -l 'team in (%s)'", team))
 	if err != nil {
 		log.Fatalf("failed to delete serviceaccount: %v", err)

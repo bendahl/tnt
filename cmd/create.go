@@ -38,9 +38,13 @@ func Create(args []string) {
 	if err != nil {
 		log.Fatalf("failed to create service account for team admin: %v", err)
 	}
-	err = createRoleBinding(adminName, namespace, adminName, team)
+	err = createAdminRoleBinding(adminName, namespace, adminName, team)
 	if err != nil {
-		log.Fatalf("failed to create rolebinding: %v", err)
+		log.Fatalf("failed to create admin rolebinding: %v", err)
+	}
+	err = createViewClusterRoleBinding(adminName, adminName, team)
+	if err != nil {
+		log.Fatalf("failed to create view clusterrolebinding: %v", err)
 	}
 	token, err := util.Kubectl(fmt.Sprintf("create token %s -n kube-system --duration %s", adminName, duration))
 	if err != nil {
@@ -77,7 +81,7 @@ func parseArgs(args []string, requestsMem *string, requestsCPU *uint, limitsMem 
 	return nil
 }
 
-const roleBindingTemplate = `
+const adminRoleBindingTemplate = `
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -95,7 +99,7 @@ subjects:
   namespace: kube-system
 `
 
-func createRoleBinding(roleBindingName, namespace, serviceAccountName, team string) error {
+func createAdminRoleBinding(roleBindingName, namespace, serviceAccountName, team string) error {
 	params := struct {
 		RoleBindingName    string
 		Namespace          string
@@ -107,11 +111,50 @@ func createRoleBinding(roleBindingName, namespace, serviceAccountName, team stri
 		ServiceAccountName: serviceAccountName,
 		Team:               team,
 	}
-	roleBinding, err := renderTemplate(roleBindingTemplate, params)
+	roleBinding, err := renderTemplate(adminRoleBindingTemplate, params)
 	if err != nil {
 		return err
 	}
-	err = applyManifest(serviceAccountName+"_rolebinding.yml", roleBinding)
+	err = applyManifest(serviceAccountName+"_admin_rolebinding.yml", roleBinding)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+const viewClusterRoleBindingTemplate = `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{.RoleBindingName}}
+  labels:
+    team: {{.Team}}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: ServiceAccount
+  name: {{.ServiceAccountName}}
+  namespace: kube-system
+`
+
+func createViewClusterRoleBinding(roleBindingName, serviceAccountName, team string) error {
+	params := struct {
+		RoleBindingName    string
+		Namespace          string
+		ServiceAccountName string
+		Team               string
+	}{
+		RoleBindingName:    roleBindingName,
+		ServiceAccountName: serviceAccountName,
+		Team:               team,
+	}
+	roleBinding, err := renderTemplate(viewClusterRoleBindingTemplate, params)
+	if err != nil {
+		return err
+	}
+	err = applyManifest(serviceAccountName+"_view_clusterrolebinding.yml", roleBinding)
 	if err != nil {
 		return err
 	}
