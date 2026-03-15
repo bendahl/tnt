@@ -53,6 +53,30 @@ func Create(args []string) {
 	fmt.Println(kubeconfig)
 }
 
+func parseArgs(args []string, requestsMem *string, requestsCPU *uint, limitsMem *string, limitsCPU *uint, namespace *string, team *string, duration *time.Duration) error {
+	cfs := flag.NewFlagSet("create", flag.ExitOnError)
+	cfs.StringVar(requestsMem, "requests-mem", "", "requests memory limit (e.g. '1Gi')")
+	cfs.UintVar(requestsCPU, "requests-cpu", 0, "requests CPU limit (e.g. 1)")
+	cfs.StringVar(limitsMem, "limits-mem", "", "limits memory limit (e.g. '1Gi')")
+	cfs.UintVar(limitsCPU, "limits-cpu", 0, "limits CPU limit (e.g. 1)")
+	cfs.StringVar(namespace, "n", "", "name of the team namespace")
+	cfs.StringVar(team, "t", "", "name of the team")
+	cfs.DurationVar(duration, "d", 48*time.Hour, "validity duration of sa token (e.g. 48h)")
+
+	err := cfs.Parse(args)
+	if err != nil {
+		return fmt.Errorf("failed to parse arguments: %v", err)
+	}
+
+	if *namespace == "" {
+		return fmt.Errorf("no namespace provided")
+	}
+	if *team == "" {
+		return fmt.Errorf("no team name given")
+	}
+	return nil
+}
+
 const roleBindingTemplate = `
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -150,23 +174,25 @@ func createKubeconfig(namespace, userName, token string) (string, error) {
 	return kubeconfig, nil
 }
 
-func applyManifest(manifestName string, manifest string) error {
-	tmp, err := os.CreateTemp("", manifestName)
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for manifest: %v\n", err)
-	}
-	defer tmp.Close()
-	defer os.Remove(tmp.Name())
-	_, err = tmp.WriteString(manifest)
-	if err != nil {
-		return fmt.Errorf("Failed to write manifest to temp file: %v\n", err)
-	}
-	res, err := util.Kubectl("apply -f " + tmp.Name())
-	if err != nil {
-		return fmt.Errorf("failed to apply manifest: %v, output: %s", err, res)
-	}
-	return nil
-}
+const quotaTemplate = `
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{.Team}}-quota
+  namespace: {{if .Namespace -}} {{.Namespace}} {{else -}} {{.Team}} {{end}}
+  labels:
+    team: {{.Team}}
+spec:
+  hard:
+	{{- if (gt .RequestsCPU 0) }}
+    requests.cpu: {{.RequestsCPU}}{{ end -}}
+	{{if .RequestsMemory }}
+    requests.memory: {{.RequestsMemory}}{{ end -}}
+	{{if (gt .LimitsCPU 0)}}
+    limits.cpu: {{.LimitsCPU}}{{ end -}}
+	{{if .LimitsMemory}}
+    limits.memory: {{.LimitsMemory}}{{ end -}}
+`
 
 func createResourceQuota(team string, namespace string, requestsCPU uint, requestsMemory string, limitsCPU uint,
 	limitsMemory string) error {
@@ -192,6 +218,16 @@ func createResourceQuota(team string, namespace string, requestsCPU uint, reques
 	return applyManifest(team+"_quota.yml", quota)
 }
 
+const namespaceTemplate = `
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{if .Namespace -}} {{.Namespace}} {{else -}} {{.Team}} {{end}}
+  labels:
+    team: {{.Team}}
+spec: {}
+`
+
 func createNamespace(team string, namespace string) error {
 	params := struct {
 		Team      string
@@ -203,6 +239,17 @@ func createNamespace(team string, namespace string) error {
 	}
 	return applyManifest(team+"_namespace.yml", namespaceManifest)
 }
+
+const serviceAccountTemplate = `
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{.ServiceAccountName}}
+  namespace: kube-system
+  labels:
+    team: {{.Team}}
+
+`
 
 func createServiceAccount(saName, team string) error {
 	params := struct {
@@ -219,40 +266,6 @@ func createServiceAccount(saName, team string) error {
 	return applyManifest(saName+"_serviceaccount.yml", saManifest)
 }
 
-func parseArgs(args []string, requestsMem *string, requestsCPU *uint, limitsMem *string, limitsCPU *uint, namespace *string, team *string, duration *time.Duration) error {
-	cfs := flag.NewFlagSet("create", flag.ExitOnError)
-	cfs.StringVar(requestsMem, "requests-mem", "", "requests memory limit (e.g. '1Gi')")
-	cfs.UintVar(requestsCPU, "requests-cpu", 0, "requests CPU limit (e.g. 1)")
-	cfs.StringVar(limitsMem, "limits-mem", "", "limits memory limit (e.g. '1Gi')")
-	cfs.UintVar(limitsCPU, "limits-cpu", 0, "limits CPU limit (e.g. 1)")
-	cfs.StringVar(namespace, "n", "", "name of the team namespace")
-	cfs.StringVar(team, "t", "", "name of the team")
-	cfs.DurationVar(duration, "d", 48*time.Hour, "validity duration of sa token (e.g. 48h)")
-
-	err := cfs.Parse(args)
-	if err != nil {
-		return fmt.Errorf("failed to parse arguments: %v", err)
-	}
-
-	if *namespace == "" {
-		return fmt.Errorf("no namespace provided")
-	}
-	if *team == "" {
-		return fmt.Errorf("no team name given")
-	}
-	return nil
-}
-
-const namespaceTemplate = `
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{if .Namespace -}} {{.Namespace}} {{else -}} {{.Team}} {{end}}
-  labels:
-    team: {{.Team}}
-spec: {}
-`
-
 func renderTemplate(templateStr string, params any) (string, error) {
 	tpl := template.Must(template.New("tpl").Parse(templateStr))
 	var buff bytes.Buffer
@@ -260,33 +273,20 @@ func renderTemplate(templateStr string, params any) (string, error) {
 	return buff.String(), err
 }
 
-const quotaTemplate = `
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: {{.Team}}-quota
-  namespace: {{if .Namespace -}} {{.Namespace}} {{else -}} {{.Team}} {{end}}
-  labels:
-    team: {{.Team}}
-spec:
-  hard:
-	{{- if (gt .RequestsCPU 0) }}
-    requests.cpu: {{.RequestsCPU}}{{ end -}}
-	{{if .RequestsMemory }}
-    requests.memory: {{.RequestsMemory}}{{ end -}}
-	{{if (gt .LimitsCPU 0)}}
-    limits.cpu: {{.LimitsCPU}}{{ end -}}
-	{{if .LimitsMemory}}
-    limits.memory: {{.LimitsMemory}}{{ end -}}
-`
-
-const serviceAccountTemplate = `
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {{.ServiceAccountName}}
-  namespace: kube-system
-  labels:
-    team: {{.Team}}
-
-`
+func applyManifest(manifestName string, manifest string) error {
+	tmp, err := os.CreateTemp("", manifestName)
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for manifest: %v\n", err)
+	}
+	defer tmp.Close()
+	defer os.Remove(tmp.Name())
+	_, err = tmp.WriteString(manifest)
+	if err != nil {
+		return fmt.Errorf("Failed to write manifest to temp file: %v\n", err)
+	}
+	res, err := util.Kubectl("apply -f " + tmp.Name())
+	if err != nil {
+		return fmt.Errorf("failed to apply manifest: %v, output: %s", err, res)
+	}
+	return nil
+}
