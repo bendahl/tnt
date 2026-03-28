@@ -29,8 +29,20 @@ The list operation will list only team namespaces in the cluster.
 Its output can be modified in order to get more detailed information or to reformat the output for further processing.
 
 ## Prerequisites
-### Build
-In order to build a binary from this project, you will need the following dependencies installed on your system:
+Prebuilt binaries for Linux (amd64) are available via GitHub packages.
+Other platforms should work as well, but are not officially supported. 
+In addition to a 64bit Linux environment, the following things need to be properly set up on your machine:
+
+- A **kubectl** version that is compatible with your target cluster on your system's path
+- A properly set up **kubeconfig** file to access your cluster and create resources on the cluster level
+
+## Installation
+To install the tnt cli tool on your system, simply run the following command in your local shell:
+
+`curl -sLo tnt https://github.com/bendahl/tnt/releases/download/v0.1.0/tnt-linux-amd64 && chmod +x tnt && sudo mv tnt /usr/local/bin/tnt`
+
+## Build
+In order to build a binary from this project, you will need the following additional dependencies installed on your system:
 
 - A recent [Go toolchain](https://go.dev)
 - [GNU Make](https://www.gnu.org/software/make/)
@@ -38,16 +50,34 @@ In order to build a binary from this project, you will need the following depend
 The latter greatly simplifies to properly build a binary and embed version information. 
 Simply run `make` in the root directory of this project to clean, test and build the project.
 
-**IMPORTANT:** At the moment, only Linux builds are supported. Cross compiling will be added at a later point in time.
+## Usage Examples
+- **Create a new team namespace 'a-team-dev1' for team 'a-team'**
 
-### Run
-In general, the tool should work across different platforms as long as the binary is compiled for the target platform. 
-Testing is currently only done on Linux (amd64), however. 
-Besides the tool binary on your path, you will also need the following:
+`tnt create -t a-team -n a-team-dev1`
 
-- A **kubectl** version that is compatible with your target cluster on your system's path
-- A properly set up **kubeconfig** file to access your cluster and create resources on the cluster level
+- **Create a new team namespace 'a-team-dev1' for team 'a-team' with token validity set to 72 hours**
 
+`tnt create -t a-team -n a-team-dev1 -d 72h`
+
+- **Create a new team namespace 'a-team-dev1' for team 'a-team' with resource limits preset**
+
+`tnt create -t a-team -n a-team-dev1 -requests-mem=1Gi -requests-cpu=1 -limits-mem=2Gi -limits-cpu=2`
+
+- **List all team namespaces (ignoring all other namespaces, like standard Kubernetes namespaces)**
+
+`tnt list`
+
+- **List all namespaces for the a-team**
+
+`tnt list -t a-team`
+
+- **List all namespaces for the a-team, using json-formatting for the output**
+
+`tnt list -t a-team -o json`
+
+- **Delete all team namespaces and related resources for the a-team**
+
+`tnt delete -t a-team`
 
 ## Design Decisions
 1. **Keep it simple**
@@ -70,36 +100,6 @@ Besides the tool binary on your path, you will also need the following:
     Therefore, external dependencies that go beyond the standard library should only be added when the effort is justified due to some complex requirements.
     Also, any external dependency is a pontential risk in regard to supply chain attacks, which are commonplace these days. 
     This is another reason to avoid such dependencies where possible, especially in a tool that has privileged access to your cluster resources.
-
-## Examples
-- **Create a new team namespace 'a-team-dev1' for team 'a-team'**
-
-`tnt create -t a-team -n a-team-dev1`
- 
-- **Create a new team namespace 'a-team-dev1' for team 'a-team' with token validity set to 72 hours**
-
-`tnt create -t a-team -n a-team-dev1 -d 72h`
-
-- **Create a new team namespace 'a-team-dev1' for team 'a-team' with resource limits preset**
-
-`tnt create -t a-team -n a-team-dev1 -requests-mem=1Gi -requests-cpu=1 -limits-mem=2Gi -limits-cpu=2`
-
-- **List all team namespaces (ignoring all other namespaces, like standard Kubernetes namespaces)**
-
-`tnt list`
- 
-- **List all namespaces for the a-team**
- 
-`tnt list -t a-team`
-
-- **List all namespaces for the a-team, using json-formatting for the output**
-
-`tnt list -t a-team -o json`
- 
-- **Delete all team namespaces and related resources for the a-team**
-
-`tnt delete -t a-team`
-
 
 ## Contributing
 The tool is in an early pre-release stage. 
